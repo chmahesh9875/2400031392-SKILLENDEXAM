@@ -1,0 +1,207 @@
+import React, { useEffect, useState } from "react";
+import "./index.css";
+
+const STORAGE_KEY = "birthday_reminder_students";
+
+function todayDayMonth() {
+  const d = new Date();
+  return { day: d.getDate(), month: d.getMonth() + 1 }; // month: 1..12
+}
+
+function formattedDM(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
+}
+
+export default function App() {
+  const [students, setStudents] = useState([]);
+  const [name, setName] = useState("");
+  const [dob, setDob] = useState(""); // "yyyy-mm-dd"
+  const [todayMatches, setTodayMatches] = useState([]);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        setStudents(JSON.parse(raw));
+      } catch {
+        setStudents([]);
+      }
+    } else {
+      // sample data
+      setStudents([
+        { id: 1, name: "Mahesh", dob: "2000-11-28" },
+        { id: 2, name: "Ajay", dob: "1999-05-10" },
+        { id: 3, name: "Kiran", dob: "2001-11-28" },
+      ]);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+    checkTodaysBirthdays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students]);
+
+  useEffect(() => {
+    // ask for notification permission once
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  function addStudent(e) {
+    e.preventDefault();
+    if (!name.trim() || !dob) return alert("Please provide name and DOB.");
+    const newStudent = {
+      id: Date.now(),
+      name: name.trim(),
+      dob,
+    };
+    setStudents((s) => [newStudent, ...s]);
+    setName("");
+    setDob("");
+  }
+
+  function removeStudent(id) {
+    if (!window.confirm("Remove this student?")) return;
+    setStudents((s) => s.filter((st) => st.id !== id));
+  }
+
+  function checkTodaysBirthdays() {
+    const { day: td, month: tm } = todayDayMonth();
+    const matches = students.filter((st) => {
+      if (!st.dob) return false;
+      const d = new Date(st.dob);
+      return d.getDate() === td && d.getMonth() + 1 === tm;
+    });
+    setTodayMatches(matches);
+
+    if (matches.length > 0) {
+      const text =
+        matches.length === 1
+          ? `Today is ${matches[0].name}'s birthday! 🎉`
+          : `Birthdays today: ${matches.map((m) => m.name).join(", ")} 🎉`;
+
+      // browser notification (if allowed)
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("Birthday Reminder", { body: text });
+      } else {
+        // fallback toast using alert (simple)
+        // but prefer in-page message already shown
+        console.log("Birthday(s):", text);
+      }
+    }
+  }
+
+  // Helper to compute age (optional)
+  function computeAge(dobStr) {
+    if (!dobStr) return "";
+    const birth = new Date(dobStr);
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    const m = now.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+    return age;
+  }
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Student Birthday Reminder</h1>
+        <p className="muted">Checks which students have birthdays today</p>
+      </header>
+
+      <main>
+        <section className="card">
+          <h2>Add Student</h2>
+          <form onSubmit={addStudent} className="form">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Student name"
+              required
+            />
+            <input
+              type="date"
+              value={dob}
+              onChange={(e) => setDob(e.target.value)}
+              required
+            />
+            <button type="submit">Add</button>
+          </form>
+        </section>
+
+        <section className="card">
+          <h2>Today's Reminders</h2>
+          <div className="today">
+            <strong>{new Date().toDateString()}</strong>
+            {todayMatches.length === 0 ? (
+              <p>No birthdays today.</p>
+            ) : (
+              <ul>
+                {todayMatches.map((m) => (
+                  <li key={m.id}>
+                    🎉 <strong>{m.name}</strong> — DOB: {formattedDM(m.dob)}{" "}
+                    {computeAge(m.dob) !== "" && `(${computeAge(m.dob)} yrs)`}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="note">
+              Tip: Allow browser notifications when prompted to receive system
+              notifications.
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <button onClick={checkTodaysBirthdays}>Check Now</button>
+            </div>
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>All Students</h2>
+          {students.length === 0 ? (
+            <p>No students yet.</p>
+          ) : (
+            <table className="student-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>DOB</th>
+                  <th>Age</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((st) => (
+                  <tr
+                    key={st.id}
+                    className={
+                      // highlight if birthday today
+                      todayMatches.find((t) => t.id === st.id) ? "highlight" : ""
+                    }
+                  >
+                    <td>{st.name}</td>
+                    <td>{formattedDM(st.dob)}</td>
+                    <td>{computeAge(st.dob)}</td>
+                    <td>
+                      <button className="small danger" onClick={() => removeStudent(st.id)}>
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </main>
+
+      <footer className="muted">Built with React — simple birthday reminder demo</footer>
+    </div>
+  );
+}
